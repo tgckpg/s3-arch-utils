@@ -3,33 +3,20 @@
 
 # ##
 # Reference
-#   https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+#   https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
 #
 # Usage
-#   arch_upload_aws4.sh path/in/bucket file_name.ext
+#   arch_list_aws4.sh path/in/bucket/prefix_
 #
 # Description
-#   Upload file_name.ext to path/in/bucket
-#    * file_name.ext must not contain special characters
-#    * path/in/bucket must not contain special characters
+#   Print a sorted list of object keys using path/in/bucket/prefix_
+#    * maximum 1000 items, continuation-token is not implemented
+#    * modify _urlencode function to support more special characters
 #
 # Env vars
 #   ARCH_S3_BUCKET_URL  The bucket url, e.g. my-bucket.s3.us-west-004.backblazeb2.com
 #   ARCH_S3_AUTH        In the format of ACCESS_KEY:SECRET_KEY
 # #
-
-_PATH=$1
-_FILE=$2
-
-if [ -z "$_PATH" ]; then
-	echo "Please define a path"
-	exit 1
-fi
-
-if [ ! -f "$_FILE" ]; then
-	echo "File does not exist"
-	exit 1
-fi
 
 if [ -z "$ARCH_S3_BUCKET_URL" ]; then
 	echo "Env ARCH_S3_BUCKET_URL is required"
@@ -44,29 +31,56 @@ SECRET_KEY=$( echo -n $ARCH_S3_AUTH | cut -d':' -f2 )
 
 BUCKET_URL=$ARCH_S3_BUCKET_URL
 
-_FILE_SHA=$( sha256sum "$_FILE" | cut -d' ' -f1 )
-if [ $? -ne 0 ]; then
-	exit 1
-fi
-
 _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
-_HEADERS="content-length;content-type;host;x-amz-content-sha256;x-amz-date"
-_CTYPE="application/octet-stream"
-_CLEN=$( wc -c $_FILE | cut -d' ' -f1 )
+_HEADERS="host;x-amz-date"
+_SHA=$( echo -n "" | sha256sum | cut -d' ' -f1 )
+_PATH=""
+
+# Keys should be sorted
+QPARAMS=(
+	"continuation-token" ""
+	"delimiter" "__OBJ__"
+	"encoding-type" "url"
+	"fetch-owner" "false"
+	"list-type" "2"
+	"max-keys" "1000"
+	"prefix" "$1"
+	"start-after" ""
+)
+
+function _urlencode {
+	echo -n $1 | sed "s/\//%2F/g"
+}
+
+_L=${#QPARAMS[@]}
+QSTR=
+
+for (( i=0; i<$_L; i+=2 )); do
+	_K=${QPARAMS[$i]}
+	_V=${QPARAMS[(($i+1))]}
+	if [ -z "$_V" ]; then
+		continue
+	fi
+
+	_S="$_K=$( _urlencode $_V )"
+
+	if [ -n "$QSTR" ]; then
+		QSTR="$QSTR&$_S"
+	else
+		QSTR="$_S"
+	fi
+done
 
 # Canon Request
-_C="PUT"
-_C="$_C\n/$_PATH/$_FILE"
-_C="$_C\n" # No query string here
-_C="$_C\ncontent-length:$_CLEN"
-_C="$_C\ncontent-type:$_CTYPE"
+_C="GET"
+_C="$_C\n/$_PATH"
+_C="$_C\n$QSTR"
 _C="$_C\nhost:$BUCKET_URL"
-_C="$_C\nx-amz-content-sha256:$_FILE_SHA"
 _C="$_C\nx-amz-date:$_DTIME"
 _C="$_C\n"
 _C="$_C\n$_HEADERS"
-_C="$_C\n$_FILE_SHA"
+_C="$_C\n$_SHA"
 
 # String to Sign
 _S="AWS4-HMAC-SHA256"
@@ -82,12 +96,11 @@ SIG=$( _HMAC "hexkey:$SIG" "$SERVICE" )
 SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
 SIG=$( _HMAC "hexkey:$SIG" "$_S" )
 
-echo "Upload Target $_FILE -> $BUCKET_URL/$_PATH/$_FILE"
-
-curl -XPUT -T $_FILE \
-  -H "Content-Type: $_CTYPE" \
-  -H "Content-Length: $_CLEN" \
-  -H "X-Amz-Content-SHA256: $_FILE_SHA" \
+curl -s -XGET \
   -H "X-Amz-Date: $_DTIME" \
-  -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request,SignedHeaders=$_HEADERS,Signature=$SIG" \
-  "https://$BUCKET_URL/$_PATH/$_FILE"
+  -H "X-Amz-Content-SHA256: $_SHA" \
+  -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
+  "https://$BUCKET_URL/$_PATH?$QSTR" \
+  | grep -Eo "<Key>[^<]*?</Key>" \
+  | sed "s/^<Key>\|<\/Key>//g" \
+  | sort
