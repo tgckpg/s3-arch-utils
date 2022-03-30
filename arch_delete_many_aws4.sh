@@ -3,26 +3,42 @@
 
 # ##
 # Reference
-#   https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html
+#   https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
 #
 # Usage
-#   arch_list_aws4.sh [path/in/bucket/prefix_]
+#   arch_delete_aws4.sh fileList.text
+#   cat fileList.txt | arch_delete_aws4.sh -
 #
 # Description
-#   Print a list of object keys using path/in/bucket/prefix_
-#   Defaults to print all keys within a bucket if no prefix is defined
-#    * maximum 1000 items, continuation-token is not implemented
-#    * modify _urlencode function to support more special characters
+#   Delete objects from a bucket with provided fileList.txt
+#    * keys must not contain special characters
 #
 # Env vars
 #   ARCH_S3_BUCKET_URL  The bucket url, e.g. my-bucket.s3.us-west-004.backblazeb2.com
 #   ARCH_S3_AUTH        In the format of ACCESS_KEY:SECRET_KEY
 # #
 
+_LIST_SRC=$1
+if [ -z "$_LIST_SRC" ]; then
+	echo "File is not defined, Use \"-\" if you were streaming from stdin"
+	exit 1
+fi
+
 if [ -z "$ARCH_S3_BUCKET_URL" ]; then
 	echo "Env ARCH_S3_BUCKET_URL is required"
 	exit 1
 fi
+
+_TEMP=$( mktemp )
+function __clean_up { rm $_TEMP; }
+trap __clean_up EXIT
+
+echo -n "<Delete>" > $_TEMP
+sed "s/.\+/<Object><Key>\0<\/Key><\/Object>/g" $_LIST_SRC | tr -d '\n' >> $_TEMP
+if [ $? -ne 0 ]; then
+	exit 1
+fi
+echo -n "</Delete>" >> $_TEMP
 
 BUCKET_NAME=$( echo -n $ARCH_S3_BUCKET_URL | cut -d'.' -f1 )
 SERVICE=$( echo -n $ARCH_S3_BUCKET_URL | cut -d'.' -f2 )
@@ -34,49 +50,16 @@ BUCKET_URL=$ARCH_S3_BUCKET_URL
 
 _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
-_HEADERS="host;x-amz-date"
-_SHA=$( echo -n "" | sha256sum | cut -d' ' -f1 )
-_PATH=""
+_HEADERS="content-md5;host;x-amz-date"
 
-# Keys should be sorted
-QPARAMS=(
-	"continuation-token" ""
-	"delimiter" "__OBJ__"
-	"encoding-type" "url"
-	"fetch-owner" "false"
-	"list-type" "2"
-	"max-keys" "1000"
-	"prefix" "$1"
-	"start-after" ""
-)
-
-function _urlencode {
-	echo -n $1 | sed "s/\//%2F/g"
-}
-
-_L=${#QPARAMS[@]}
-QSTR=
-
-for (( i=0; i<$_L; i+=2 )); do
-	_K=${QPARAMS[$i]}
-	_V=${QPARAMS[(($i+1))]}
-	if [ -z "$_V" ]; then
-		continue
-	fi
-
-	_S="$_K=$( _urlencode $_V )"
-
-	if [ -n "$QSTR" ]; then
-		QSTR="$QSTR&$_S"
-	else
-		QSTR="$_S"
-	fi
-done
+_MD5=$( openssl dgst -md5 -binary $_TEMP | base64 -w0 )
+_SHA=$( sha256sum $_TEMP | cut -d' ' -f1 )
 
 # Canon Request
-_C="GET"
-_C="$_C\n/$_PATH"
-_C="$_C\n$QSTR"
+_C="POST"
+_C="$_C\n/"
+_C="$_C\ndelete="
+_C="$_C\ncontent-md5:$_MD5"
 _C="$_C\nhost:$BUCKET_URL"
 _C="$_C\nx-amz-date:$_DTIME"
 _C="$_C\n"
@@ -97,10 +80,13 @@ SIG=$( _HMAC "hexkey:$SIG" "$SERVICE" )
 SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
 SIG=$( _HMAC "hexkey:$SIG" "$_S" )
 
-curl -s -XGET \
+# BUCKET_URL="127.0.0.1:12345"
+curl -s --data @$_TEMP -XPOST \
   -H "X-Amz-Date: $_DTIME" \
+  -H "Content-MD5: $_MD5" \
+  -H "Content-Type: application/xml" \
   -H "X-Amz-Content-SHA256: $_SHA" \
   -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
-  "https://$BUCKET_URL/$_PATH?$QSTR" \
-  | grep -Eo "<Key>[^<]*?</Key>" \
-  | sed "s/^<Key>\|<\/Key>//g"
+  "https://$BUCKET_URL/?delete" \
+  | grep -Eo "<Deleted><Key>[^<]*?</Key>" \
+  | sed "s/^<Deleted><Key>\|<\/Key>//g" | sed "s/^/Deleted \0/g"
