@@ -34,7 +34,7 @@ BUCKET_URL=$ARCH_S3_BUCKET_URL
 
 _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
-_HEADERS="host;x-amz-date"
+_HEADERS="host;x-amz-content-sha256;x-amz-date"
 _SHA=$( echo -n "" | sha256sum | cut -d' ' -f1 )
 _PATH=""
 
@@ -78,6 +78,7 @@ _C="GET"
 _C="$_C\n/$_PATH"
 _C="$_C\n$QSTR"
 _C="$_C\nhost:$BUCKET_URL"
+_C="$_C\nx-amz-content-sha256:$_SHA"
 _C="$_C\nx-amz-date:$_DTIME"
 _C="$_C\n"
 _C="$_C\n$_HEADERS"
