@@ -50,7 +50,7 @@ BUCKET_URL=$ARCH_S3_BUCKET_URL
 
 _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
-_HEADERS="content-md5;host;x-amz-date"
+_HEADERS="content-md5;host;x-amz-content-sha256;x-amz-date"
 
 _MD5=$( openssl dgst -md5 -binary $_TEMP | base64 -w0 )
 _SHA=$( sha256sum $_TEMP | cut -d' ' -f1 )
@@ -61,6 +61,7 @@ _C="$_C\n/"
 _C="$_C\ndelete="
 _C="$_C\ncontent-md5:$_MD5"
 _C="$_C\nhost:$BUCKET_URL"
+_C="$_C\nx-amz-content-sha256:$_SHA"
 _C="$_C\nx-amz-date:$_DTIME"
 _C="$_C\n"
 _C="$_C\n$_HEADERS"
