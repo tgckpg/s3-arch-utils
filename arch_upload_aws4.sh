@@ -36,11 +36,14 @@ if [ -z "$ARCH_S3_BUCKET_URL" ]; then
 	exit 1
 fi
 
-BUCKET_NAME=$( echo -n $ARCH_S3_BUCKET_URL | cut -d'.' -f1 )
-SERVICE=$( echo -n $ARCH_S3_BUCKET_URL | cut -d'.' -f2 )
-REGION=$( echo -n $ARCH_S3_BUCKET_URL | cut -d'.' -f3 )
-ACCESS_KEY=$( echo -n $ARCH_S3_AUTH | cut -d':' -f1 )
-SECRET_KEY=$( echo -n $ARCH_S3_AUTH | cut -d':' -f2 )
+function _str { printf "%s" $@; }
+function _stre { printf $@; }
+
+BUCKET_NAME=$( _str $ARCH_S3_BUCKET_URL | cut -d'.' -f1 )
+SERVICE=$( _str $ARCH_S3_BUCKET_URL | cut -d'.' -f2 )
+REGION=$( _str $ARCH_S3_BUCKET_URL | cut -d'.' -f3 )
+ACCESS_KEY=$( _str $ARCH_S3_AUTH | cut -d':' -f1 )
+SECRET_KEY=$( _str $ARCH_S3_AUTH | cut -d':' -f2 )
 
 BUCKET_URL=$ARCH_S3_BUCKET_URL
 
@@ -72,9 +75,9 @@ _C="$_C\n$_FILE_SHA"
 _S="AWS4-HMAC-SHA256"
 _S="$_S\n$_DTIME"
 _S="$_S\n$_DATE/$REGION/$SERVICE/aws4_request"
-_S="$_S\n$( echo -ne "$_C" | sha256sum | cut -d' ' -f1 )"
+_S="$_S\n$( _stre "$_C" | sha256sum | cut -d' ' -f1 )"
 
-function _HMAC { echo -ne "$2" | openssl dgst -sha256 -hex -mac HMAC -macopt "$1" | cut -d' ' -f2; }
+function _HMAC { _stre "$2" | openssl dgst -sha256 -hex -mac HMAC -macopt "$1" | cut -d' ' -f2; }
 
 SIG=$( _HMAC "key:AWS4$SECRET_KEY" "$_DATE" )
 SIG=$( _HMAC "hexkey:$SIG" "$REGION" )
