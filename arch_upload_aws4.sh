@@ -56,7 +56,7 @@ _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
 _HEADERS="content-length;content-type;host;x-amz-content-sha256;x-amz-date"
 _CTYPE="application/octet-stream"
-_CLEN=$( wc -c $_FILE | cut -d' ' -f1 )
+_CLEN=$( wc -c < $_FILE | tr -d ' ' )
 
 # Canon Request
 _C="PUT"
