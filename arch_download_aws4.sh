@@ -28,7 +28,7 @@ if [ -z "$ARCH_S3_BUCKET_URL" ]; then
 fi
 
 function _str { printf "%s" $@; }
-function _stre { printf $@; }
+function _stre { printf $( echo -n "$@" | sed "s/%/%%/g" ); }
 
 BUCKET_NAME=$( _str $ARCH_S3_BUCKET_URL | cut -d'.' -f1 )
 SERVICE=$( _str $ARCH_S3_BUCKET_URL | cut -d'.' -f2 )

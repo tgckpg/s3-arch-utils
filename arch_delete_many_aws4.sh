@@ -30,7 +30,7 @@ if [ -z "$ARCH_S3_BUCKET_URL" ]; then
 fi
 
 function _str { printf "%s" $@; }
-function _stre { printf $@; }
+function _stre { printf $( echo -n "$@" | sed "s/%/%%/g" ); }
 
 _TEMP=$( mktemp )
 function __clean_up { rm $_TEMP; }
