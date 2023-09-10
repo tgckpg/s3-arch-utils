@@ -10,6 +10,47 @@
 #   Create a secret config for arch_* in secret-name under the
 #   specificed namespace
 #
+# Sample CronJob spec
+#   apiVersion: batch/v1
+#   kind: CronJob
+#   metadata:
+#     name: s3-upload
+#   spec:
+#     schedule: "0 0 * * *"
+#     jobTemplate:
+#       spec:
+#         template:
+#           spec:
+#             restartPolicy: OnFailure
+#             containers:
+#               - name: backup
+#                 image: [IMAGE_WITH_OPENSSL_AND_BASH]
+#                 env:
+#                   - name: ARCH_S3_BUCKET_URL
+#                     valueFrom:
+#                       secretKeyRef:
+#                         name: s3-arch-conf
+#                         key: BUCKET_URL
+#                   - name: ARCH_S3_AUTH
+#                     valueFrom:
+#                       secretKeyRef:
+#                         name: s3-arch-conf
+#                         key: AUTH
+#                 command:
+#                   - sh
+#                   - -c
+#                   - |
+#                     cd /tmp;
+#                     _DATE=$( date -u +"%Y%m%dT%H%M%SZ" );
+#                     bash /s3/arch_upload_aws4.sh blog $_DATE.tar.gz;
+#                     rm -r dump/ $_DATE.tar.gz $_DATE.tar.gz.enc;
+#                 volumeMounts:
+#                   - mountPath: "/s3"
+#                     name: s3-arch-utils
+#             volumes:
+#               - name: s3-arch-utils
+#                 secret:
+#                   secretName: [secret-name]
 # #
 
 function _print_files {
