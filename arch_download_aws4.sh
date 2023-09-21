@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Copyleft https://git.k8s.astropenguin.net/penguin/s3-arch-utils
 
 # ##
