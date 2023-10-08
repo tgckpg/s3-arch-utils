@@ -6,12 +6,12 @@
 #   https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 #
 # Usage
-#   arch_upload_aws4.sh path/in/bucket file_name.ext
+#   arch_upload_aws4.sh path/in/bucket/file_name.ext path/to/file_name.ext
 #
 # Description
-#   Upload file_name.ext to path/in/bucket
-#    * file_name.ext must not contain special characters
-#    * path/in/bucket must not contain special characters
+#   Upload path/to/file_name.ext to path/in/bucket/file_name.ext
+#    * path/to/file_name.ext must not contain special characters
+#    * path/in/bucket/file_name.ext must not contain special characters
 #
 # Env vars
 #   ARCH_S3_BUCKET_URL  The bucket url, e.g. my-bucket.s3.us-west-004.backblazeb2.com
@@ -60,7 +60,7 @@ _CLEN=$( wc -c < $_FILE | tr -d ' ' )
 
 # Canon Request
 _C="PUT"
-_C="$_C\n/$_PATH/$_FILE"
+_C="$_C\n/$_PATH"
 _C="$_C\n" # No query string here
 _C="$_C\ncontent-length:$_CLEN"
 _C="$_C\ncontent-type:$_CTYPE"
@@ -85,7 +85,7 @@ SIG=$( _HMAC "hexkey:$SIG" "$SERVICE" )
 SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
 SIG=$( _HMAC "hexkey:$SIG" "$_S" )
 
-echo "Upload Target $_FILE -> $BUCKET_URL/$_PATH/$_FILE"
+echo "Upload Target $_FILE -> $BUCKET_URL/$_PATH"
 
 curl -XPUT -T $_FILE \
   -H "Content-Type: $_CTYPE" \
@@ -93,4 +93,4 @@ curl -XPUT -T $_FILE \
   -H "X-Amz-Content-SHA256: $_FILE_SHA" \
   -H "X-Amz-Date: $_DTIME" \
   -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request,SignedHeaders=$_HEADERS,Signature=$SIG" \
-  "https://$BUCKET_URL/$_PATH/$_FILE"
+  "https://$BUCKET_URL/$_PATH"
