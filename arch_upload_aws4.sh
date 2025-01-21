@@ -20,6 +20,7 @@
 
 _PATH=$1
 _FILE=$2
+_ACL=$3
 
 if [ -z "$_PATH" ]; then
 	echo "Please define a path"
@@ -34,6 +35,10 @@ fi
 if [ -z "$ARCH_S3_BUCKET_URL" ]; then
 	echo "Env ARCH_S3_BUCKET_URL is required"
 	exit 1
+fi
+
+if [ -z "$_ACL" ]; then
+    _ACL="private"
 fi
 
 function _str { printf "%s" $@; }
@@ -54,9 +59,13 @@ fi
 
 _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
-_HEADERS="content-length;content-type;host;x-amz-content-sha256;x-amz-date"
-_CTYPE="application/octet-stream"
+_HEADERS="content-length;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date"
 _CLEN=$( wc -c < $_FILE | tr -d ' ' )
+
+_CTYPE=$( file --mime-type -b $_FILE )
+if [ -z "$_CTYPE" ]; then
+    _CTYPE="application/octet-stream"
+fi
 
 # Canon Request
 _C="PUT"
@@ -65,6 +74,7 @@ _C="$_C\n" # No query string here
 _C="$_C\ncontent-length:$_CLEN"
 _C="$_C\ncontent-type:$_CTYPE"
 _C="$_C\nhost:$BUCKET_URL"
+_C="$_C\nx-amz-acl:$_ACL"
 _C="$_C\nx-amz-content-sha256:$_FILE_SHA"
 _C="$_C\nx-amz-date:$_DTIME"
 _C="$_C\n"
@@ -90,6 +100,7 @@ echo "Upload Target $_FILE -> $BUCKET_URL/$_PATH"
 curl -XPUT -T $_FILE \
   -H "Content-Type: $_CTYPE" \
   -H "Content-Length: $_CLEN" \
+  -H "X-Amz-ACL: $_ACL" \
   -H "X-Amz-Content-SHA256: $_FILE_SHA" \
   -H "X-Amz-Date: $_DTIME" \
   -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request,SignedHeaders=$_HEADERS,Signature=$SIG" \

@@ -42,7 +42,7 @@
 #                   - |
 #                     cd /tmp;
 #                     _DATE=$( date -u +"%Y%m%dT%H%M%SZ" );
-#                     bash /s3/arch_upload_aws4.sh blog $_DATE.tar.gz;
+#                     bash /s3/arch_upload_aws4.sh blog/$_DATE.tar.gz $_DATE.tar.gz;
 #                     rm -r dump/ $_DATE.tar.gz $_DATE.tar.gz.enc;
 #                 volumeMounts:
 #                   - mountPath: "/s3"
