@@ -44,7 +44,7 @@ _PATH=""
 # Keys should be sorted
 QPARAMS=(
 	"continuation-token" ""
-	"delimiter" "__OBJ__"
+	"delimiter" "/"
 	"encoding-type" "url"
 	"fetch-owner" "false"
 	"list-type" "2"
