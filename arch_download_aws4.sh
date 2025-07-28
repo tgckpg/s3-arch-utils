@@ -68,7 +68,12 @@ SIG=$( _HMAC "hexkey:$SIG" "$SERVICE" )
 SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
 SIG=$( _HMAC "hexkey:$SIG" "$_S" )
 
-curl -XGET \
+OPT_O=""
+if [ -t 1 ]; then
+	OPT_O="-O --no-clobber"
+fi
+
+curl $OPT_O -XGET \
   -H "X-Amz-Date: $_DTIME" \
   -H "X-Amz-Content-SHA256: $_SHA" \
   -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
