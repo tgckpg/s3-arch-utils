@@ -107,4 +107,4 @@ curl -s -XGET \
   -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
   "https://$BUCKET_URL/$_PATH?$QSTR" \
   | grep -Eo "<Key>[^<]*?</Key>" \
-  | sed -e "s/^<Key>\|<\/Key>//g" -e "s/%2F/\//g"
+  | sed -e "s/^<Key>\|<\/Key>//g" -e "s/%2F/\//g" -e "s/%40/@/g"
