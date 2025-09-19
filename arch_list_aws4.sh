@@ -35,8 +35,6 @@ SECRET_KEY=$( _str $ARCH_S3_AUTH | cut -d':' -f2 )
 
 BUCKET_URL=$ARCH_S3_BUCKET_URL
 
-_DATE=$( date -u +"%Y%m%d" )
-_DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
 _HEADERS="host;x-amz-content-sha256;x-amz-date"
 _SHA=$( _str "" | sha256sum | cut -d' ' -f1 )
 _PATH=""
@@ -57,54 +55,88 @@ function _urlencode {
 	_str $1 | sed "s/\//%2F/g"
 }
 
-_L=${#QPARAMS[@]}
-QSTR=
-
-for (( i=0; i<$_L; i+=2 )); do
-	_K=${QPARAMS[$i]}
-	_V=${QPARAMS[(($i+1))]}
-	if [ -z "$_V" ]; then
-		continue
-	fi
-
-	_S="$_K=$( _urlencode $_V )"
-
-	if [ -n "$QSTR" ]; then
-		QSTR="$QSTR&$_S"
-	else
-		QSTR="$_S"
-	fi
-done
-
-# Canon Request
-_C="GET"
-_C="$_C\n/$_PATH"
-_C="$_C\n$QSTR"
-_C="$_C\nhost:$BUCKET_URL"
-_C="$_C\nx-amz-content-sha256:$_SHA"
-_C="$_C\nx-amz-date:$_DTIME"
-_C="$_C\n"
-_C="$_C\n$_HEADERS"
-_C="$_C\n$_SHA"
-
-# String to Sign
-_S="AWS4-HMAC-SHA256"
-_S="$_S\n$_DTIME"
-_S="$_S\n$_DATE/$REGION/$SERVICE/aws4_request"
-_S="$_S\n$( _stre "$_C" | sha256sum | cut -d' ' -f1 )"
+function _dstr {
+	sed \
+		-e "s/^<Key>\|<\/Key>//g" \
+		-e "s/^<NextContinuationToken>\|<\/NextContinuationToken>//g" \
+		-e "s/%2F/\//g" \
+		-e "s/%40/@/g"
+}
 
 function _HMAC { _stre "$2" | openssl dgst -sha256 -hex -mac HMAC -macopt "$1" | cut -d' ' -f2; }
 
-SIG=$( _HMAC "key:AWS4$SECRET_KEY" "$_DATE" )
-SIG=$( _HMAC "hexkey:$SIG" "$REGION" )
-SIG=$( _HMAC "hexkey:$SIG" "$SERVICE" )
-SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
-SIG=$( _HMAC "hexkey:$SIG" "$_S" )
+_TOKEN=
 
-curl -s -XGET \
-  -H "X-Amz-Date: $_DTIME" \
-  -H "X-Amz-Content-SHA256: $_SHA" \
-  -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
-  "https://$BUCKET_URL/$_PATH?$QSTR" \
-  | grep -Eo "<Key>[^<]*?</Key>" \
-  | sed -e "s/^<Key>\|<\/Key>//g" -e "s/%2F/\//g" -e "s/%40/@/g"
+function _sendRequest {
+	local _DATE=$( date -u +"%Y%m%d" )
+	local _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
+
+	local _L=${#QPARAMS[@]}
+	local QSTR=
+	local _S=
+
+	QPARAMS[1]="$1"
+
+	for (( i=0; i<$_L; i+=2 )); do
+		_K=${QPARAMS[$i]}
+		_V=${QPARAMS[(($i+1))]}
+		if [ -z "$_V" ]; then
+			continue
+		fi
+
+		_S="$_K=$( _urlencode $_V )"
+
+		if [ -n "$QSTR" ]; then
+			QSTR="$QSTR&$_S"
+		else
+			QSTR="$_S"
+		fi
+	done
+
+	# Canon Request
+	local _C="GET"
+	_C="$_C\n/$_PATH"
+	_C="$_C\n$QSTR"
+	_C="$_C\nhost:$BUCKET_URL"
+	_C="$_C\nx-amz-content-sha256:$_SHA"
+	_C="$_C\nx-amz-date:$_DTIME"
+	_C="$_C\n"
+	_C="$_C\n$_HEADERS"
+	_C="$_C\n$_SHA"
+
+	# String to Sign
+	_S="AWS4-HMAC-SHA256"
+	_S="$_S\n$_DTIME"
+	_S="$_S\n$_DATE/$REGION/$SERVICE/aws4_request"
+	_S="$_S\n$( _stre "$_C" | sha256sum | cut -d' ' -f1 )"
+
+	SIG=$( _HMAC "key:AWS4$SECRET_KEY" "$_DATE" )
+	SIG=$( _HMAC "hexkey:$SIG" "$REGION" )
+	SIG=$( _HMAC "hexkey:$SIG" "$SERVICE" )
+	SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
+	SIG=$( _HMAC "hexkey:$SIG" "$_S" )
+
+	exec 3>&1
+
+	_TOKEN="$( \
+		curl -s -XGET \
+			-H "X-Amz-Date: $_DTIME" \
+			-H "X-Amz-Content-SHA256: $_SHA" \
+			-H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
+			"https://$BUCKET_URL/$_PATH?$QSTR" \
+			| tee >( grep -Eo "<Key>[^<]*?</Key>" | _dstr >&3 ) \
+		| grep -Eo "<NextContinuationToken>[^<]*?</NextContinuationToken>" | _dstr \
+	)"
+
+	exec 3>&-
+}
+
+_sendRequest
+while [ -n "$_TOKEN" ]; do
+	if [ -t 1 ]; then
+		read -p "Press Enter for next page (Ctrl+C to terminate)."
+		# Move cursor up, return to col 0, clear line
+        printf "\033[A\r\033[K"
+    fi
+    _sendRequest "$_TOKEN"
+done
