@@ -33,7 +33,8 @@ function _str { printf "%s" $@; }
 function _stre { printf $( echo -n "$@" | sed "s/%/%%/g" ); }
 
 _TEMP=$( mktemp )
-function __clean_up { rm $_TEMP; }
+_RESP=$( mktemp )
+function __clean_up { rm -f "$_TEMP" "$_RESP"; }
 trap __clean_up EXIT
 
 _str "<Delete>" > $_TEMP
@@ -55,8 +56,8 @@ _DATE=$( date -u +"%Y%m%d" )
 _DTIME=$( date -u +"%Y%m%dT%H%M%SZ" )
 _HEADERS="content-md5;host;x-amz-content-sha256;x-amz-date"
 
-_MD5=$( openssl dgst -md5 -binary $_TEMP | base64 -w0 )
-_SHA=$( sha256sum $_TEMP | cut -d' ' -f1 )
+_MD5=$( openssl dgst -md5 -binary "$_TEMP" | base64 -w0 )
+_SHA=$( sha256sum "$_TEMP" | cut -d' ' -f1 )
 
 # Canon Request
 _C="POST"
@@ -85,12 +86,35 @@ SIG=$( _HMAC "hexkey:$SIG" "aws4_request" )
 SIG=$( _HMAC "hexkey:$SIG" "$_S" )
 
 # BUCKET_URL="127.0.0.1:12345"
-curl -s --data @$_TEMP -XPOST \
+# Run curl: stdout into _RESP, keep status
+HTTP_CODE=$(curl -s -o "$_RESP" -w "%{http_code}" --data @"$_TEMP" -XPOST \
   -H "X-Amz-Date: $_DTIME" \
   -H "Content-MD5: $_MD5" \
   -H "Content-Type: application/xml" \
   -H "X-Amz-Content-SHA256: $_SHA" \
   -H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
-  "https://$BUCKET_URL/?delete" \
-  | grep -Eo "<Deleted><Key>[^<]*?</Key>" \
-  | sed "s/^<Deleted><Key>\|<\/Key>//g" | sed "s/^/Deleted \0/g"
+  "https://$BUCKET_URL/?delete"
+)
+
+# If not 200, warn on stderr only
+if [ "$HTTP_CODE" -ne 200 ]; then
+	echo "arch_delete_aws4: HTTP $HTTP_CODE" >&2
+
+	KEY_COUNT=$(grep -o '<Object><Key>' "$_TEMP" | wc -l | tr -d '[:space:]')
+
+	if [ "$HTTP_CODE" -eq 400 ] && [ "$KEY_COUNT" -gt 1000 ]; then
+		echo "Hint: DeleteObjects max is 1000 keys per request (you sent $KEY_COUNT)" >&2
+	fi
+
+  # Optional: show body if exists (still stderr)
+  if [ -s "$_RESP" ]; then
+	  echo "--- response body ---" >&2
+	  cat "$_RESP" >&2
+	  echo "---------------------" >&2
+  fi
+fi
+
+grep -Eo '<Deleted><Key>[^<]*</Key>' "$_RESP" |
+  sed -e 's#^<Deleted><Key>##' \
+      -e 's#</Key>$##' \
+      -e 's#^#Deleted #'
