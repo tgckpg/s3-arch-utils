@@ -52,7 +52,21 @@ QPARAMS=(
 )
 
 function _urlencode {
-	_str $1 | sed "s/\//%2F/g"
+	local LC_ALL=C
+	local s="$1" c hex i
+
+	for ((i=0; i<${#s}; i++)); do
+		c="${s:i:1}"
+		case "$c" in
+			[a-zA-Z0-9._~-])
+				printf '%s' "$c"
+				;;
+			*)
+				printf -v hex '%02X' "'$c"
+				printf '%%%s' "$hex"
+				;;
+		esac
+	done
 }
 
 function _dstr {
@@ -84,7 +98,7 @@ function _sendRequest {
 			continue
 		fi
 
-		_S="$_K=$( _urlencode $_V )"
+		_S="$_K=$( _urlencode "$_V" )"
 
 		if [ -n "$QSTR" ]; then
 			QSTR="$QSTR&$_S"
@@ -119,13 +133,15 @@ function _sendRequest {
 	exec 3>&1
 
 	_TOKEN="$( \
-		curl -s -XGET \
+		curl --fail-with-body -sS -XGET \
 			-H "X-Amz-Date: $_DTIME" \
 			-H "X-Amz-Content-SHA256: $_SHA" \
 			-H "Authorization: AWS4-HMAC-SHA256 Credential=$ACCESS_KEY/$_DATE/$REGION/$SERVICE/aws4_request, SignedHeaders=$_HEADERS, Signature=$SIG" \
 			"https://$BUCKET_URL/$_PATH?$QSTR" \
 			| tee >( grep -Eo "<Key>[^<]*?</Key>" | _dstr >&3 ) \
-		| grep -Eo "<NextContinuationToken>[^<]*?</NextContinuationToken>" | _dstr \
+		| grep -Eo "<NextContinuationToken>[^<]*?</NextContinuationToken>" \
+			| sed -e 's#^<NextContinuationToken>##' \
+				  -e 's#</NextContinuationToken>$##' \
 	)"
 
 	exec 3>&-
